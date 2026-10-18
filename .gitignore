@@ -1,0 +1,24 @@
+# XcodeGen 产物：每次 `xcodegen generate` 重新生成，不入库
+*.xcodeproj
+*.xcworkspace
+
+# 构建产物
+build/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# 用户态文件
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+
+# macOS / 编辑器
+.DS_Store
+*.swp
+.vscode/
+.idea/
+
+# 提交消息草稿
+_commit_msgs/

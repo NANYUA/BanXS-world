@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: 生成工程 / 编译（模拟器）
+    # 用 macos-15：XcodeGen 2.46 生成的工程是 project format 77（Xcode 16 格式），
+    # macos-14 的默认 Xcode 15.4 打不开，会直接报
+    # `The project cannot be opened because it is in a future Xcode project file format (77)`。
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 选最新的 Xcode
+        run: |
+          # runner 的默认 Xcode 版本会随镜像漂移，这里显式挑版本号最大的一个
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          echo "selected: $latest"
+          sudo xcode-select -s "$latest/Contents/Developer"
+          xcodebuild -version
+
+      - name: 生成 .xcodeproj
+        run: xcodegen generate
+
+      - name: 编译
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project PageTurnLab.xcodeproj \
+            -scheme PageTurnLab \
+            -configuration Debug \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+  ipa:
+    name: 打包未签名 IPA
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 安装 XcodeGen
+        run: brew install xcodegen
+
+      - name: 选最新的 Xcode
+        run: |
+          latest=$(ls -d /Applications/Xcode*.app | sort -V | tail -1)
+          sudo xcode-select -s "$latest/Contents/Developer"
+          xcodebuild -version
+
+      - name: 生成 .xcodeproj
+        run: xcodegen generate
+
+      - name: 编译（真机切片，不签名）
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project PageTurnLab.xcodeproj \
+            -scheme PageTurnLab \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: 打成 .ipa
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/PageTurnLab.app Payload/
+          zip -qr PageTurnLab-unsigned.ipa Payload
+          ls -lh PageTurnLab-unsigned.ipa
+          # 侧载工具（Sideloadly / AltStore）要求包里有可执行文件，缺了会报「无法读取应用」
+          test -f Payload/PageTurnLab.app/PageTurnLab || { echo "缺少可执行文件"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PageTurnLab-unsigned-ipa
+          path: PageTurnLab-unsigned.ipa
+          if-no-files-found: error
